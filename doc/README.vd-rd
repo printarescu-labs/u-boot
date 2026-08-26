@@ -1,0 +1,112 @@
+vd-rd downstream fork architecture
+===================================
+
+This is a downstream vendor fork of upstream U-Boot, maintained for vd-rd's
+board fleet across multiple SoC vendors. Reference for the fork's structure.
+Everything below is vendor-agnostic policy unless a section says otherwise.
+
+Branches
+--------
+
+- ``main`` -- pure mirror of upstream ``master``. Fast-forward only, never
+  receives vendor commits directly.
+- ``vendor/release`` -- vendor patch series rebased onto each upstream
+  *final* release tag only (``vYYYY.MM`` / ``vYYYY.MM.N``, never ``-rcN``).
+  Release-flavour builds come from here.
+- ``vendor/dev`` -- vendor patch series rebased onto upstream ``main`` HEAD
+  regularly. Dev-flavour (bleeding edge / testing) builds come from here.
+  Board and feature work happens on short-lived topic branches off this
+  branch, merged in via PR.
+
+An ``upstream`` remote (``https://github.com/u-boot/u-boot.git``, the
+official read-only mirror of ``source.denx.de/u-boot/u-boot``) is used to
+pull new upstream commits/tags.
+
+Upstream sync
+-------------
+
+``.github/workflows/sync-upstream.yml`` runs weekly (and on demand via
+``workflow_dispatch``):
+
+1. Fast-forwards ``main`` to ``upstream/main``.
+2. Rebases ``vendor/dev`` onto ``upstream/main``.
+3. On a new upstream *final* tag, rebases ``vendor/release`` onto it.
+4. On any rebase conflict, aborts and files a GitHub issue instead of
+   force-pushing a broken branch.
+
+Note: scheduled (``cron``) workflows only fire from the repository's
+*default* branch on GitHub. Since ``main`` must stay untouched, the GitHub
+repo's default branch should be set to ``vendor/dev`` for the schedule to
+actually run -- this is a one-time manual setting change (Settings ->
+Branches on GitHub), not something this repo's contents control.
+
+Versioning
+----------
+
+U-Boot's ``Makefile`` reserves ``SUBLEVEL`` for downstream forks. On
+``vendor/release``, after rebasing onto a new upstream final tag, ``SUBLEVEL``
+is set/bumped per vendor-only patch revision and the result is tagged
+``vYYYY.MM.<N>`` (e.g. ``v2026.10.1``). ``vendor/dev`` isn't tagged --
+U-Boot's own git-describe-based local version string plus the CI artifact
+name (``<defconfig>-dev-<date>-<shortsha>``) is enough to identify a build.
+
+Board namespace
+---------------
+
+New boards live under ``board/vd-rd/<board-name>/``, regardless of SoC
+vendor (mirroring upstream's own ``board/<vendor>/<name>/`` layout:
+``Kconfig``, ``Makefile``, ``MAINTAINERS``, ``<name>.c``).
+
+Devicetree sourcing
+--------------------
+
+DTS files for vd-rd boards are **not** kept in this repo. They're
+maintained in a separate coordinator repo shared with the Linux kernel tree
+(single source of truth for the same hardware description), compiled there,
+and the resulting ``.dtb`` is placed at a fixed raw offset on the boot
+medium -- the same way the environment already lives at a fixed offset.
+
+U-Boot proper is configured with ``CONFIG_OF_BOARD`` (not ``OF_SEPARATE``,
+which is layout-coupled to this repo's own build via ``fdt_find_separate()``)
+plus ``OF_HAS_PRIOR_STAGE``/``OF_OMIT_DTB`` so the build produces no linked
+or appended DTB at all. ``board_fdt_blob_setup()`` returns a pointer to an
+FDT already resident in DRAM rather than fetching it itself -- it runs
+before driver-model bring-up, which is itself driven by the control FDT, so
+it can't do a DM-based storage read. Who places that FDT in DRAM (a prior
+boot stage vs. SPL vs. something else) is vendor/SoC-specific -- see below.
+
+Out of scope so far
+--------------------
+
+- Actual ``board/vd-rd/...`` and devicetree content (needs schematics).
+- Per-vendor ``board_fdt_blob_setup()`` loader implementations.
+- The coordinator repo itself, and its dispatch integration with this
+  fork's CI (``# TODO: dispatch to coordinator`` stubs are left in the
+  build workflows for this).
+
+Microchip/Atmel AT91
+=====================
+
+First boards targeted: ``glasnost_m9260``, ``glasnost_m9g10``,
+``glasnost_m9g20`` (classic AT91SAM9, four separate PCB designs) and
+``glasnost_m9g25`` (AT91SAM9x5 family). Everything in this section is
+specific to this vendor/SoC family -- don't assume it generalizes.
+
+Boot-medium handling (SD vs. NOR) for these SoC families has no upstream
+runtime SPL detection (that only exists for SAMA5D2/D3/D4) -- the default
+plan is one defconfig per medium, matching upstream convention. Real
+runtime detection is a possible later addition, decided per board.
+
+For the DTB handoff described above: classic AT91SAM9 SPL has no driver
+model / devicetree at all (pure C board-init), and already has non-DM,
+hardcoded raw-storage read primitives -- it uses them to load
+``u-boot.bin`` itself (``spl_mmc_load_image()`` / ``spl_spi_load_image()``,
+existing ``CONFIG_SYS_..._U_BOOT_OFFS`` offsets). The plan is for SPL to
+also read the separately-stored ``.dtb`` from its own fixed raw offset (a
+new Kconfig symbol alongside the existing image-offset ones) and place it
+at a fixed DRAM address for ``board_fdt_blob_setup()`` to return. Once DM
+is up from that FDT, the normal env drivers
+(``ENV_IS_IN_MMC``/``ENV_IS_IN_SPI_FLASH``) handle the environment as
+usual. A different SoC vendor with a DM-capable SPL may not need this at
+all, or may need a different handoff -- re-derive per vendor, don't reuse
+this section's specifics.
