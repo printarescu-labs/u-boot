@@ -1,0 +1,58 @@
+name: Dev build
+
+on:
+  push:
+    branches: [vendor/dev]
+  pull_request:
+    branches: [vendor/dev]
+  workflow_dispatch: {}
+
+env:
+  CROSS_COMPILE: arm-none-eabi-
+
+jobs:
+  build:
+    name: ${{ matrix.defconfig }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # placeholder, swap for glasnost_* defconfigs later
+        defconfig:
+          - at91sam9260ek_nandflash_defconfig
+          - at91sam9g20ek_dataflash_cs0_defconfig
+          - at91sam9x5ek_mmc_defconfig
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain and build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi bc bison flex libssl-dev
+
+      - name: Build metadata
+        id: meta
+        run: |
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure
+        run: make ${{ matrix.defconfig }}
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          for f in u-boot.bin u-boot.map spl/u-boot-spl.bin MLO; do
+            [ -f "$f" ] && cp "$f" out/ || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.defconfig }}-dev-${{ steps.meta.outputs.date }}-${{ steps.meta.outputs.sha }}
+          path: out/
+          if-no-files-found: warn
+
+      # TODO: dispatch to coordinator
