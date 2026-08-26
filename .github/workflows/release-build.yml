@@ -1,0 +1,84 @@
+name: Release build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+env:
+  CROSS_COMPILE: arm-none-eabi-
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.defconfig }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # placeholder, swap for glasnost_* defconfigs later
+        defconfig:
+          - at91sam9260ek_nandflash_defconfig
+          - at91sam9g20ek_dataflash_cs0_defconfig
+          - at91sam9x5ek_mmc_defconfig
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain and build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi bc bison flex libssl-dev
+
+      - name: Configure
+        run: make ${{ matrix.defconfig }}
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          for f in u-boot.bin u-boot.map spl/u-boot-spl.bin MLO; do
+            [ -f "$f" ] && cp "$f" out/ || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.defconfig }}-${{ github.ref_name }}
+          path: out/
+          if-no-files-found: warn
+
+      # TODO: dispatch to coordinator
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package artifacts
+        run: |
+          mkdir -p release-assets
+          for d in artifacts/*/; do
+            name="$(basename "$d")"
+            tar -C "$d" -czf "release-assets/${name}.tar.gz" .
+          done
+
+      - name: Create/update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release-assets/*.tar.gz \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --notes "Automated release build for ${{ github.ref_name }}" \
+            || gh release upload "${{ github.ref_name }}" release-assets/*.tar.gz \
+            --repo "${{ github.repository }}" --clobber
