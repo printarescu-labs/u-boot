@@ -1,0 +1,112 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # every Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "vd-rd-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Add upstream remote and fetch everything
+        run: |
+          git remote add upstream https://github.com/u-boot/u-boot.git
+          git fetch upstream --tags --prune
+          git fetch origin main vendor/dev vendor/release
+
+      - name: Fast-forward main
+        run: |
+          git checkout -B main origin/main
+          git merge --ff-only upstream/main
+          git push origin main
+
+      - name: Rebase vendor/dev onto upstream/main
+        id: dev
+        run: |
+          git checkout -B vendor/dev origin/vendor/dev
+          if git rebase upstream/main; then
+            git push --force-with-lease origin vendor/dev
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          else
+            git rebase --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File issue on vendor/dev conflict
+        if: steps.dev.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "vendor/dev rebase onto upstream/main conflicts ($(date -u +%F))" \
+            --body "Automated sync could not rebase vendor/dev onto upstream/main cleanly.
+
+          Resolve manually:
+              git fetch upstream
+              git checkout vendor/dev
+              git rebase upstream/main
+              # fix conflicts
+              git push --force-with-lease origin vendor/dev"
+
+      - name: Trigger dev build
+        # GITHUB_TOKEN pushes don't fire other workflows' push triggers
+        if: steps.dev.outputs.status == 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run dev-build.yml --repo "${{ github.repository }}" --ref vendor/dev
+
+      - name: Check for a new final upstream release tag
+        id: tag
+        run: |
+          latest="$(git tag --list 'v20*' | grep -vE -- '-rc' | sort -V | tail -1)"
+          if git merge-base --is-ancestor "$latest" origin/vendor/release; then
+            echo "new_tag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_tag=$latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebase vendor/release onto new tag
+        if: steps.tag.outputs.new_tag != ''
+        id: release
+        run: |
+          git checkout -B vendor/release origin/vendor/release
+          if git rebase "${{ steps.tag.outputs.new_tag }}"; then
+            git push --force-with-lease origin vendor/release
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          else
+            git rebase --abort
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: File issue on vendor/release conflict
+        if: steps.release.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --repo "${{ github.repository }}" \
+            --title "vendor/release rebase onto ${{ steps.tag.outputs.new_tag }} conflicts" \
+            --body "Automated sync could not rebase vendor/release onto ${{ steps.tag.outputs.new_tag }} cleanly.
+
+          Resolve manually:
+              git fetch upstream
+              git checkout vendor/release
+              git rebase ${{ steps.tag.outputs.new_tag }}
+              # fix conflicts, then bump SUBLEVEL and re-tag
+              git push --force-with-lease origin vendor/release"
+
+      # schedule trigger needs vendor/dev set as GitHub default branch
