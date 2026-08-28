@@ -92,21 +92,33 @@ First boards targeted: ``glasnost_m9260``, ``glasnost_m9g10``,
 ``glasnost_m9g25`` (AT91SAM9x5 family). Everything in this section is
 specific to this vendor/SoC family -- don't assume it generalizes.
 
-Boot-medium handling (SD vs. NOR) for these SoC families has no upstream
-runtime SPL detection (that only exists for SAMA5D2/D3/D4) -- the default
-plan is one defconfig per medium, matching upstream convention. Real
-runtime detection is a possible later addition, decided per board.
+Classic AT91SAM9 boards in this fleet use AT91Bootstrap as the first-stage
+bootloader, external to this repo. AT91Bootstrap performs SoC clock/SDRAM
+init and loads ``u-boot.bin`` directly into SDRAM -- there is no U-Boot SPL
+stage at all (confirmed for ``glasnost_m9260``; presumed, not yet verified,
+for the other three boards in this family). ``u-boot.bin`` is built with
+``CONFIG_SKIP_LOWLEVEL_INIT`` and the normal build-time-embedded devicetree
+(default ``OF_CONTROL``/``OF_SEPARATE`` flow, dtb appended to the image) --
+AT91Bootstrap loads the combined image as a single blob, so there is no
+separate DTB-at-a-fixed-offset handoff to design for this family.
 
-For the DTB handoff described above: classic AT91SAM9 SPL has no driver
-model / devicetree at all (pure C board-init), and already has non-DM,
-hardcoded raw-storage read primitives -- it uses them to load
-``u-boot.bin`` itself (``spl_mmc_load_image()`` / ``spl_spi_load_image()``,
-existing ``CONFIG_SYS_..._U_BOOT_OFFS`` offsets). The plan is for SPL to
-also read the separately-stored ``.dtb`` from its own fixed raw offset (a
-new Kconfig symbol alongside the existing image-offset ones) and place it
-at a fixed DRAM address for ``board_fdt_blob_setup()`` to return. Once DM
-is up from that FDT, the normal env drivers
-(``ENV_IS_IN_MMC``/``ENV_IS_IN_SPI_FLASH``) handle the environment as
-usual. A different SoC vendor with a DM-capable SPL may not need this at
-all, or may need a different handoff -- re-derive per vendor, don't reuse
-this section's specifics.
+(An earlier version of this doc claimed classic AT91SAM9 SPL has no driver
+model / devicetree support at all, as the justification for the fixed-offset
+DTB handoff plan below it. That claim was an overstatement in general --
+``board/siemens/taurus`` proves ``SPL_DM`` + ``SPL_OF_PLATDATA`` fits in this
+SoC family's tiny SPL SRAM budget upstream -- and moot for this fleet's
+boards specifically, since they don't use U-Boot SPL at all.)
+
+Boot-medium fallback (MMC normal boot, SPI-NOR recovery) is handled by
+U-Boot's Standard Boot (``CONFIG_BOOTSTD_FULL``), not by a
+defconfig-per-medium split or an SPL-level device order: the ``boot_targets``
+environment variable (e.g. ``"mmc0 spi_flash0"``) gives U-Boot proper an
+ordered list of bootdevs to scan, falling through to the next one if nothing
+bootable is found. The SPI-NOR side needs ``CONFIG_BOOTDEV_SPI_FLASH`` +
+``CONFIG_BOOTMETH_SCRIPT``, which reads a boot script from a fixed
+``script_offset_f``/``script_size_f`` env-configured offset in SPI flash --
+this is the recovery image's mechanism, distinct from AT91Bootstrap's own
+boot-medium selection (which decides where ``u-boot.bin`` itself is loaded
+from, a separate, earlier and so far unexamined question). Whether
+AT91Bootstrap itself supports a similar try-this-then-that medium fallback
+for loading U-Boot proper hasn't been investigated yet.
