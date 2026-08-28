@@ -1,0 +1,12 @@
+if TARGET_GLASNOST_M9260
+
+config SYS_BOARD
+	default "glasnost_m9260"
+
+config SYS_VENDOR
+	default "vd-rd"
+
+config SYS_CONFIG_NAME
+	default "glasnost_m9260"
+
+endif
