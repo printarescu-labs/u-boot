@@ -79,6 +79,25 @@ config TARGET_AT91SAM9260EK
 	bool "Atmel at91sam9260 reference board"
 	select AT91SAM9260
 
+config TARGET_GLASNOST_M9260
+	bool "VD-RD Glasnost M9260 board"
+	select AT91SAM9260
+	select BOARD_LATE_INIT
+	select DM
+	select DM_GPIO
+	select DM_SERIAL
+	select DM_MMC
+	select DM_SPI
+	select DM_SPI_FLASH
+	select MTD
+	select LED
+	select LED_GPIO
+	select LED_BOOT
+	select BUTTON
+	select BUTTON_GPIO
+	select WDT
+	imply OF_UPSTREAM
+
 config TARGET_GURNARD
 	bool "Support gurnard"
 	select AT91SAM9G45
@@ -379,5 +398,6 @@ source "board/ronetix/pm9g45/Kconfig"
 source "board/siemens/corvus/Kconfig"
 source "board/siemens/taurus/Kconfig"
 source "board/siemens/smartweb/Kconfig"
+source "board/vd-rd/glasnost_m9260/Kconfig"
 
 endif
