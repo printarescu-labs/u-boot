@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * at91sam9260-glasnost-m9260-u-boot.dtsi - U-Boot specific fragment for the
+ * VD-RD Glasnost M9260 board (glasnost_m9260).
+ */
+
+/ {
+	chosen {
+		bootph-all;
+	};
+
+	options {
+		u-boot {
+			compatible = "u-boot,config";
+			boot-led = <&led_green>;
+			boot-led-period-ms = <250>;
+		};
+	};
+
+	leds {
+		led-red {
+			default-state = "off";
+		};
+
+		led-green {
+			default-state = "off";
+		};
+
+		led-blue {
+			default-state = "off";
+		};
+	};
+};
+
+&dbgu {
+	bootph-all;
+};
+
+&pinctrl {
+	bootph-all;
+};
+
+&pinctrl_dbgu {
+	bootph-all;
+};
+
+&pmc {
+	bootph-all;
+};
+
+/*
+ * The PMC is bound as a plain UCLASS_SIMPLE_BUS container
+ * (U_BOOT_DRIVER(at91_pmc), drivers/clk/at91/compat.c:41), so its clock
+ * children are bound by simple_bus_post_bind() -> dm_scan_fdt_dev(), which
+ * before relocation passes pre_reloc_only=true (drivers/core/root.c:228).
+ * lists_bind_fdt() then skips any node that is neither marked bootph-* nor
+ * matched by a driver carrying DM_FLAG_PRE_RELOC (drivers/core/lists.c:256).
+ * None of the at91 clock drivers set DM_FLAG_PRE_RELOC, so every clock the
+ * pre-relocation console path needs must be marked here - otherwise
+ * atmel_serial_probe()'s clk_get_by_index() fails with -ENODEV and
+ * serial_find_console_or_panic() panics with "No serial driver found".
+ * This mirrors arch/arm/dts/at91sam9260.dtsi (U-Boot's legacy SoC dtsi),
+ * which carries these same markers.
+ */
+&mck {
+	bootph-all;
+};
+
+&periphck {
+	bootph-all;
+};
+
+&pioA_clk {
+	bootph-all;
+};
+
+&pioB_clk {
+	bootph-all;
+};
+
+&pioC_clk {
+	bootph-all;
+};
+
+&pioA {
+	bootph-all;
+};
+
+&pioC {
+	bootph-all;
+};
+
+&watchdog {
+	bootph-all;
+	timeout-sec = <16>;
+};
