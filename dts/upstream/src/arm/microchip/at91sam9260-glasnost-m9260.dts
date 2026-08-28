@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * at91sam9260-glasnost-m9260.dts - Device Tree for the VD-RD Glasnost M9260 board.
+ *
+ * Local test/bring-up devicetree only: per doc/README.vd-rd, the real
+ * devicetree for vd-rd boards is maintained in a separate coordinator repo
+ * shared with the Linux kernel tree. This file lets glasnost_m9260 be built
+ * and tested from this fork in the meantime, via CONFIG_OF_UPSTREAM.
+ */
+/dts-v1/;
+#include "at91sam9260.dtsi"
+
+/ {
+	model = "VD-RD Glasnost M9260";
+	compatible = "vd-rd,glasnost-m9260", "atmel,at91sam9260", "atmel,at91sam9";
+
+	aliases {
+		serial0 = &dbgu;
+	};
+
+	chosen {
+		stdout-path = &dbgu;
+	};
+
+	clocks {
+		slow_xtal: slow_xtal {
+			clock-frequency = <32768>;
+		};
+
+		main_xtal: main_xtal {
+			clock-frequency = <18432000>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led_red: led-red {
+			label = "led-red";
+			gpios = <&pioC 6 GPIO_ACTIVE_LOW>;
+		};
+
+		led_green: led-green {
+			label = "led-green";
+			gpios = <&pioC 7 GPIO_ACTIVE_LOW>;
+		};
+
+		led_blue: led-blue {
+			label = "led-blue";
+			gpios = <&pioC 9 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+
+		gpio0 {
+			label = "gpio0";
+			gpios = <&pioA 12 GPIO_ACTIVE_LOW>;
+			linux,code = <0x100>;
+		};
+
+		gpio1 {
+			label = "gpio1";
+			gpios = <&pioA 13 GPIO_ACTIVE_LOW>;
+			linux,code = <0x101>;
+		};
+	};
+};
+
+/*
+ * CCF-style clock subtree for U-Boot's CLK_AT91 driver
+ * (drivers/clk/at91/compat.c), which binds the PMC as a plain bus container
+ * and expects one child node per clock. The upstream-synced at91sam9260.dtsi
+ * this file includes instead describes the PMC with the flat
+ * "#clock-cells = <2>" scheme (`<&pmc TYPE INDEX>`), which that driver does
+ * not implement, so without this nothing resolves a clock at all.
+ *
+ * Only clocks that both have a matching driver and a consumer on this board
+ * are described. compat.c has no match for the at91rm9200 main-osc/main/pll
+ * or at91sam9260 slow-clock compatibles, and its master-clock driver simply
+ * reports gd->arch.mck_rate_hz (computed by at91_clock_init() from the live
+ * PMC registers) rather than walking parent clocks - so describing that
+ * upstream chain here would bind nothing and be read by nobody.
+ */
+&pmc {
+	mck: masterck {
+		compatible = "atmel,at91rm9200-clk-master";
+		#clock-cells = <0>;
+	};
+
+	periphck: periphck {
+		compatible = "atmel,at91rm9200-clk-peripheral";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		clocks = <&mck>;
+
+		pioA_clk: pioA_clk@2 {
+			#clock-cells = <0>;
+			reg = <2>;
+		};
+
+		pioB_clk: pioB_clk@3 {
+			#clock-cells = <0>;
+			reg = <3>;
+		};
+
+		pioC_clk: pioC_clk@4 {
+			#clock-cells = <0>;
+			reg = <4>;
+		};
+
+		mci0_clk: mci0_clk@9 {
+			#clock-cells = <0>;
+			reg = <9>;
+		};
+
+		spi0_clk: spi0_clk@12 {
+			#clock-cells = <0>;
+			reg = <12>;
+		};
+
+		macb0_clk: macb0_clk@21 {
+			#clock-cells = <0>;
+			reg = <21>;
+		};
+	};
+};
+
+&dbgu {
+	clocks = <&mck>;
+	status = "okay";
+};
+
+&macb0 {
+	phy-mode = "rmii";
+	clocks = <&macb0_clk>, <&macb0_clk>;
+	status = "okay";
+};
+
+&mmc0 {
+	pinctrl-names = "default";
+	/* Assuming slot0, 4-bit bus - TODO confirm vs schematic */
+	pinctrl-0 = <&pinctrl_mmc0_clk &pinctrl_mmc0_slot0_cmd_dat0
+		     &pinctrl_mmc0_slot0_dat1_3>;
+	bus-width = <4>;
+	cd-gpios = <&pioB 19 GPIO_ACTIVE_LOW>;
+	clocks = <&mci0_clk>;
+	status = "okay";
+};
+
+&spi0 {
+	clocks = <&spi0_clk>;
+	status = "okay";
+};
+
+&watchdog {
+	status = "okay";
+};
+
+&pioA {
+	clocks = <&pioA_clk>;
+};
+
+&pioB {
+	clocks = <&pioB_clk>;
+};
+
+&pioC {
+	clocks = <&pioC_clk>;
+};

@@ -1,0 +1,8 @@
+GLASNOST_M9260 BOARD
+M:	Vadim Radu <vadim@printarescu.ro>
+S:	Maintained
+F:	board/vd-rd/glasnost_m9260/
+F:	include/configs/glasnost_m9260.h
+F:	configs/glasnost_m9260_defconfig
+F:	arch/arm/dts/at91sam9260-glasnost-m9260-u-boot.dtsi
+F:	dts/upstream/src/arm/microchip/at91sam9260-glasnost-m9260.dts
