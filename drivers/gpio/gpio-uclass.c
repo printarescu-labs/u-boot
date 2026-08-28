@@ -1184,6 +1184,12 @@ static int gpio_request_tail(int ret, const char *nodename,
 				    flags | (desc->flags & GPIOD_MASK_DIR));
 	if (ret) {
 		debug("%s: dm_gpio_set_dir failed\n", __func__);
+		/*
+		 * The request above already claimed the line. Release it, or
+		 * the pin stays claimed forever and every later request for it
+		 * fails with -EBUSY, masking the real error reported here.
+		 */
+		dm_gpio_free(desc->dev, desc);
 		goto err;
 	}
 
