@@ -602,7 +602,13 @@ static int at91_gpio_set_flags(struct udevice *dev, unsigned int offset,
 	struct at91_port_priv *port = dev_get_priv(dev);
 	ulong supported_mask;
 
-	supported_mask = GPIOD_OPEN_DRAIN | GPIOD_MASK_DIR | GPIOD_PULL_UP;
+	/*
+	 * Polarity is resolved by the uclass before we are called: it flips
+	 * GPIOD_IS_OUT_ACTIVE for active-low outputs and inverts the value
+	 * read back for inputs. We only have to tolerate the flag here.
+	 */
+	supported_mask = GPIOD_OPEN_DRAIN | GPIOD_MASK_DIR | GPIOD_PULL_UP |
+			 GPIOD_ACTIVE_LOW;
 	if (flags & ~supported_mask)
 		return -ENOTSUPP;
 
